@@ -4,8 +4,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   updateProfile,
   signOut,
   type User,
@@ -80,41 +79,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    let redirectChecked = false;
-
-    // Handle Google redirect result before allowing loading to finish
-    const redirectPromise = getRedirectResult(auth).then(async (result) => {
-      if (result?.user) {
-        const gUser = result.user;
-        const userDoc = await getDoc(doc(db, "users", gUser.uid));
-        if (userDoc.exists()) {
-          await setDoc(doc(db, "users", gUser.uid), { email: gUser.email }, { merge: true });
-        } else {
-          let name = gUser.displayName || "User";
-          if (name.toLowerCase().includes("@noorspace")) {
-            name = name.replace(/@noorspace/gi, "").trim() || "User";
-          }
-          let suffix = 1;
-          while (await isDisplayNameTaken(name)) {
-            suffix++;
-            name = `${gUser.displayName || "User"} ${suffix}`;
-          }
-          await setDoc(doc(db, "users", gUser.uid), {
-            uid: gUser.uid,
-            displayName: name,
-            email: gUser.email,
-            photoURL: gUser.photoURL,
-            createdAt: serverTimestamp(),
-          });
-          await updateProfile(gUser, { displayName: name });
-        }
-      }
-    }).catch((err) => {
-      console.error("[Auth] Redirect result error:", err);
-    }).finally(() => {
-      redirectChecked = true;
-    });
-
     return onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
@@ -122,22 +86,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const token = await firebaseUser.getIdTokenResult();
           setIsAdmin(token.claims.admin === true || token.claims.superadmin === true);
           setIsSuperAdmin(token.claims.superadmin === true);
-        } catch (err) {
-          console.error("[Auth] Failed to get token:", err);
+        } catch {
+          // Token fetch failed
         }
         await fetchProfile(firebaseUser.uid);
-        setLoading(false);
       } else {
         setIsAdmin(false);
         setIsSuperAdmin(false);
         setProfile(null);
-        // Only stop loading after redirect check completes (avoids premature redirect to /login)
-        if (redirectChecked) {
-          setLoading(false);
-        } else {
-          redirectPromise.then(() => setLoading(false));
-        }
       }
+      setLoading(false);
     });
   }, []);
 
@@ -181,7 +139,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    await signInWithRedirect(auth, provider);
+    const { user: gUser } = await signInWithPopup(auth, provider);
+    const userDoc = await getDoc(doc(db, "users", gUser.uid));
+    if (userDoc.exists()) {
+      await setDoc(
+        doc(db, "users", gUser.uid),
+        { email: gUser.email },
+        { merge: true },
+      );
+    } else {
+      let name = gUser.displayName || "User";
+      if (name.toLowerCase().includes("@noorspace")) {
+        name = name.replace(/@noorspace/gi, "").trim() || "User";
+      }
+      let suffix = 1;
+      while (await isDisplayNameTaken(name)) {
+        suffix++;
+        name = `${gUser.displayName || "User"} ${suffix}`;
+      }
+      await setDoc(doc(db, "users", gUser.uid), {
+        uid: gUser.uid,
+        displayName: name,
+        email: gUser.email,
+        photoURL: gUser.photoURL,
+        createdAt: serverTimestamp(),
+      });
+      await updateProfile(gUser, { displayName: name });
+    }
   };
 
   const logout = async () => {
