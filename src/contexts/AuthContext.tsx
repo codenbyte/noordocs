@@ -4,7 +4,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   updateProfile,
   signOut,
   type User,
@@ -79,8 +80,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    // Handle Google redirect result
+    getRedirectResult(auth).then(async (result) => {
+      if (result?.user) {
+        const gUser = result.user;
+        const userDoc = await getDoc(doc(db, "users", gUser.uid));
+        if (userDoc.exists()) {
+          await setDoc(doc(db, "users", gUser.uid), { email: gUser.email }, { merge: true });
+        } else {
+          let name = gUser.displayName || "User";
+          if (name.toLowerCase().includes("@noorspace")) {
+            name = name.replace(/@noorspace/gi, "").trim() || "User";
+          }
+          let suffix = 1;
+          while (await isDisplayNameTaken(name)) {
+            suffix++;
+            name = `${gUser.displayName || "User"} ${suffix}`;
+          }
+          await setDoc(doc(db, "users", gUser.uid), {
+            uid: gUser.uid,
+            displayName: name,
+            email: gUser.email,
+            photoURL: gUser.photoURL,
+            createdAt: serverTimestamp(),
+          });
+          await updateProfile(gUser, { displayName: name });
+        }
+      }
+    }).catch((err) => {
+      console.error("[Auth] Redirect result error:", err);
+    });
+
     return onAuthStateChanged(auth, async (firebaseUser) => {
-      console.log("[Auth] onAuthStateChanged:", firebaseUser?.uid ?? "null");
       setUser(firebaseUser);
       if (firebaseUser) {
         try {
@@ -140,36 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    const { user: gUser } = await signInWithPopup(auth, provider);
-    const userDoc = await getDoc(doc(db, "users", gUser.uid));
-    if (userDoc.exists()) {
-      // Returning user — only update email (don't overwrite custom photoURL or displayName)
-      await setDoc(
-        doc(db, "users", gUser.uid),
-        { email: gUser.email },
-        { merge: true },
-      );
-    } else {
-      // New user — ensure unique displayName
-      let name = gUser.displayName || "User";
-      // Strip @NoorSpace — reserved for admins
-      if (name.toLowerCase().includes("@noorspace")) {
-        name = name.replace(/@noorspace/gi, "").trim() || "User";
-      }
-      let suffix = 1;
-      while (await isDisplayNameTaken(name)) {
-        suffix++;
-        name = `${gUser.displayName || "User"} ${suffix}`;
-      }
-      await setDoc(doc(db, "users", gUser.uid), {
-        uid: gUser.uid,
-        displayName: name,
-        email: gUser.email,
-        photoURL: gUser.photoURL,
-        createdAt: serverTimestamp(),
-      });
-      await updateProfile(gUser, { displayName: name });
-    }
+    await signInWithRedirect(auth, provider);
   };
 
   const logout = async () => {

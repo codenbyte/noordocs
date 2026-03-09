@@ -72,7 +72,6 @@ function LoginForm() {
     setError("");
     try {
       await loginWithGoogle();
-      navigate(from, { replace: true });
     } catch (err: any) {
       setError(getFriendlyAuthError(err));
     }
@@ -216,7 +215,6 @@ function SignupForm() {
     setError("");
     try {
       await loginWithGoogle();
-      navigate("/", { replace: true });
     } catch (err: any) {
       setError(getFriendlyAuthError(err));
     }
