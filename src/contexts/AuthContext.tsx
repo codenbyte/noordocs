@@ -80,8 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // Handle Google redirect result
-    getRedirectResult(auth).then(async (result) => {
+    let redirectChecked = false;
+
+    // Handle Google redirect result before allowing loading to finish
+    const redirectPromise = getRedirectResult(auth).then(async (result) => {
       if (result?.user) {
         const gUser = result.user;
         const userDoc = await getDoc(doc(db, "users", gUser.uid));
@@ -109,6 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }).catch((err) => {
       console.error("[Auth] Redirect result error:", err);
+    }).finally(() => {
+      redirectChecked = true;
     });
 
     return onAuthStateChanged(auth, async (firebaseUser) => {
@@ -122,12 +126,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error("[Auth] Failed to get token:", err);
         }
         await fetchProfile(firebaseUser.uid);
+        setLoading(false);
       } else {
         setIsAdmin(false);
         setIsSuperAdmin(false);
         setProfile(null);
+        // Only stop loading after redirect check completes (avoids premature redirect to /login)
+        if (redirectChecked) {
+          setLoading(false);
+        } else {
+          redirectPromise.then(() => setLoading(false));
+        }
       }
-      setLoading(false);
     });
   }, []);
 
