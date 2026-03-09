@@ -80,11 +80,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log("[Auth] onAuthStateChanged:", firebaseUser?.uid ?? "null");
       setUser(firebaseUser);
       if (firebaseUser) {
-        const token = await firebaseUser.getIdTokenResult();
-        setIsAdmin(token.claims.admin === true || token.claims.superadmin === true);
-        setIsSuperAdmin(token.claims.superadmin === true);
+        try {
+          const token = await firebaseUser.getIdTokenResult();
+          setIsAdmin(token.claims.admin === true || token.claims.superadmin === true);
+          setIsSuperAdmin(token.claims.superadmin === true);
+        } catch (err) {
+          console.error("[Auth] Failed to get token:", err);
+        }
         await fetchProfile(firebaseUser.uid);
       } else {
         setIsAdmin(false);
